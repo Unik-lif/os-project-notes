@@ -90,3 +90,102 @@ asm ("incl %0" :"=a"(var):"0"(var)); // 0 means the first register, here is eax.
 
 ```
 
+我们再看之后的一些有趣的例子：
+
+```nasm
+// Some code
+__asm__ __volatile__(   "btsl %1,%0"
+                      : "=m" (ADDR)
+                      : "Ir" (pos)
+                      : "cc"
+                      );
+```
+
+通过RTFM我们可以得知，由于6.828基于32位架构，这里的btsl其实表示对于long words的操作，即4 Bytes大小单位的操作。具体来说，对于Input，设置了pos，`I`表示其范围在0\~31之间，ADDR则是存在内存中的一个数。
+
+因此具体来说，ADDR内存对应的数的第pos位被提取出来赋值给CF，与此同时原位置被修改为1。在清楚btsl指令的情况下，gcc编译器知道内存被修改了，但可能不知道状态寄存器改变了，所以需要添上cc。
+
+还有两个例子，尝试解读之（不一定要自己写成这样，那样感觉还是有点难度的）
+
+```nasm
+// 比较有技巧性
+static inline char * strcpy(char * dest,const char *src)
+{
+int d0, d1, d2;
+__asm__ __volatile__(  "1:\tlodsb\n\t" // load byte from 'src', into al.
+                       "stosb\n\t" // store al at 'dest'.
+                       "testb %%al,%%al\n\t" // test '\0' or not.
+                       "jne 1b" // not 0, then jump back to 1.
+                     : "=&S" (d0), "=&D" (d1), "=&a" (d2) // changed before finishing these lines.
+                     : "0" (src),"1" (dest) // d0 就是第一个出现的寄存器
+                     : "memory");
+return dest;
+}
+```
+
+
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-12 212420.png" alt=""><figcaption><p>LODSB</p></figcaption></figure>
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-12 213003.png" alt=""><figcaption><p>STOSB</p></figcaption></figure>
+
+就这么对照吧，当然为了实现同一个字符串copy的操作，可以用上面诸如`cld`等等指令的配合。
+
+最后还有一个例子，那么大致上inline汇编就不再是个问题了。
+
+```nasm
+// syscall typical usage.
+#define _syscall3(type,name,type1,arg1,type2,arg2,type3,arg3) \
+type name(type1 arg1,type2 arg2,type3 arg3) \
+{ \
+long __res; \
+__asm__ volatile (  "int $0x80" \
+                  : "=a" (__res) \
+                  : "0" (__NR_##name),"b" ((long)(arg1)),"c" ((long)(arg2)), \
+                    "d" ((long)(arg3))); \
+__syscall_return(type,__res); \
+}N
+```
+
+Whenever a system call with three arguments is made, the macro shown above is used to make the call. The syscall number is placed in eax, then each parameters in ebx, ecx, edx. And finally "int 0x80" is the instruction which makes the system call work. The return value can be collected from eax.
+
+仿照以前写cs61c的经验，准备好参数然后`int $0x80`中断一下就了事。
+
+
+
+**PC physical address:**
+
+```
+
++------------------+  <- 0xFFFFFFFF (4GB)
+|      32-bit      |
+|  memory mapped   |
+|     devices      |
+|                  |
+/\/\/\/\/\/\/\/\/\/\
+
+/\/\/\/\/\/\/\/\/\/\
+|                  |
+|      Unused      |
+|                  |
++------------------+  <- depends on amount of RAM
+|                  |
+|                  |
+| Extended Memory  |
+|                  |
+|                  |
++------------------+  <- 0x00100000 (1MB)
+|     BIOS ROM     |
++------------------+  <- 0x000F0000 (960KB)
+|  16-bit devices, |
+|  expansion ROMs  |
++------------------+  <- 0x000C0000 (768KB)
+|   VGA Display    |
++------------------+  <- 0x000A0000 (640KB)
+|                  |
+|    Low Memory    |
+|                  |
++------------------+  <- 0x00000000
+```
+
+****
