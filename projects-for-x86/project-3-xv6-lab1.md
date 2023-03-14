@@ -174,18 +174,105 @@ Whenever a system call with three arguments is made, the macro shown above is us
 | Extended Memory  |
 |                  |
 |                  |
-+------------------+  <- 0x00100000 (1MB)
-|     BIOS ROM     |
-+------------------+  <- 0x000F0000 (960KB)
-|  16-bit devices, |
-|  expansion ROMs  |
-+------------------+  <- 0x000C0000 (768KB)
-|   VGA Display    |
-+------------------+  <- 0x000A0000 (640KB)
-|                  |
-|    Low Memory    |
-|                  |
-+------------------+  <- 0x00000000
++------------------+  <- 0x00100000 (1MB)    -------
+|     BIOS ROM     |                            ^
++------------------+  <- 0x000F0000 (960KB)     |
+|  16-bit devices, |                            |
+|  expansion ROMs  |                            |
++------------------+  <- 0x000C0000 (768KB) legacy 8086
+|   VGA Display    |                            |
++------------------+  <- 0x000A0000 (640KB)     |
+|                  |                            |
+|    Low Memory    |                            |
+|                  |                            |
++------------------+  <- 0x00000000          -------
 ```
 
-****
+JOS启动为了兼容性保留了8086机器的一部分。材料中提到，以前的BIOS是真实存在ROM之中，而现在往往放在闪存里头。
+
+start point:
+
+```
+// Some code
+The target architecture is set to "i8086".
+[f000:fff0]    0xffff0: ljmp   $0xf000,$0xe05b
+0x0000fff0 in ?? ()
+```
+
+上述即为一开始启动的代码，可以看到启动位置为0xffff0，在上述框图的`BIOS ROM`的位置附近。
+
+**Exercise 2. Use gdb** **to Trace Instructions.**
+
+我们使用`si`进行追踪。
+
+```sh
+[f000:e05b]    0xfe05b: cmpl   $0x0,%cs:0x6ac8
+0x0000e05b in ?? () # 看一下地址0xf6ac8, 但并没有研究出来这个东西到底是哪个dirty的小饼干
+(gdb) x/w *0xf6ac8
+0x0:    0x00000000 # 哎呀，看样子比较会得到0
+
+[f000:e062]    0xfe062: jne    0xfd2e1 # won't jump for zero.
+0x0000e062 in ?? ()
+[f000:e066]    0xfe066: xor    %dx,%dx # 置零
+0x0000e066 in ?? ()
+[f000:e068]    0xfe068: mov    %dx,%ss # ss will be set to zero.
+0x0000e068 in ?? ()
+[f000:e06a]    0xfe06a: mov    $0x7000,%esp # esp set to 0x7000
+0x0000e06a in ?? ()
+[f000:e070]    0xfe070: mov    $0xf34c2,%edx # 为什么要赋值？
+0x0000e070 in ?? ()
+[f000:e076]    0xfe076: jmp    0xfd15c # 跳走了！
+0x0000e076 in ?? ()
+[f000:d15c]    0xfd15c: mov    %eax,%ecx # %ecx被赋值.
+0x0000d15c in ?? ()
+(gdb) i r eax
+eax            0x0                 0
+[f000:d15f]    0xfd15f: cli # 清除中断位，IF, 我们可以看一下ELFLAG
+0x0000d15f in ?? ()
+(gdb) i r eflags
+eflags         0x46                [ PF ZF ]
+[f000:d160]    0xfd160: cld # clear DF, direction flag 0, when using string operation, ESI/EDI will increase.
+0x0000d160 in ?? ()
+(gdb) i r eflags
+eflags         0x46                [ PF ZF ]
+[f000:d161]    0xfd161: mov    $0x8f,%eax # eax = 8f. 
+0x0000d161 in ?? () 
+(gdb) i r eflags
+eflags         0x46                [ PF ZF ]
+[f000:d167]    0xfd167: out    %al,$0x70 # output %al to 0x70 IO Port.
+0x0000d167 in ?? ()
+[f000:d169]    0xfd169: in     $0x71,%al # input from port 71 to al
+0x0000d169 in ?? ()
+[f000:d16b]    0xfd16b: in     $0x92,%al # input from port 92 to al
+0x0000d16b in ?? ()
+(gdb) i r al
+al             0x0                 0
+[f000:d16d]    0xfd16d: or     $0x2,%al # or.
+0x0000d16d in ?? ()
+[f000:d16f]    0xfd16f: out    %al,$0x92 # output to 0x92 port.
+0x0000d16f in ?? ()
+[f000:d171]    0xfd171: lidtw  %cs:0x6ab8 # They are commonly executed in real-address mode to allow processor initialization prior to switching to protected mode. load the number in.
+0x0000d171 in ?? ()
+[f000:d177]    0xfd177: lgdtw  %cs:0x6a74 # Load Global/Interrupt Descriptor Table 
+0x0000d177 in ?? ()
+[f000:d17d]    0xfd17d: mov    %cr0,%eax # It seems that I can't get cr0 info using gdb.
+0x0000d17d in ?? ()
+[f000:d180]    0xfd180: or     $0x1,%eax #
+0x0000d180 in ?? ()
+(gdb) i r eax
+eax            0x60000010          1610612752
+(gdb) si
+[f000:d184]    0xfd184: mov    %eax,%cr0
+0x0000d184 in ?? ()
+(gdb) i r eax
+eax            0x60000011          1610612753
+[f000:d187]    0xfd187: ljmpl  $0x8,$0xfd18f // jump
+0x0000d187 in ?? ()
+[f000:d187]    0xfd187: jmp    0x8:0xfd18f
+0x0000d187 in ?? ()
+(gdb) si
+The target architecture is set to "i386". // world change!!
+=> 0xfd18f:     mov    eax,0x10
+0x000fd18f in ?? ()
+```
+
