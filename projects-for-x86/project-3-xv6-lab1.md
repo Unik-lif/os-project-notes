@@ -192,11 +192,11 @@ JOS启动为了兼容性保留了8086机器的一部分。材料中提到，以�
 
 start point:
 
-```
-// Some code
+```nasm
+
 The target architecture is set to "i8086".
-[f000:fff0]    0xffff0: ljmp   $0xf000,$0xe05b
-0x0000fff0 in ?? ()
+[f000:fff0]    0xffff0: ljmp   $0xf000,$0xe05b # strat from 0xffff0 as the cold reset vector.
+0x0000fff0 in ?? () # 0xfe05b: the actual start of the POST code in the BIOS ROM.
 ```
 
 上述即为一开始启动的代码，可以看到启动位置为0xffff0，在上述框图的`BIOS ROM`的位置附近。
@@ -208,8 +208,8 @@ The target architecture is set to "i8086".
 ```sh
 [f000:e05b]    0xfe05b: cmpl   $0x0,%cs:0x6ac8
 0x0000e05b in ?? () # 看一下地址0xf6ac8, 但并没有研究出来这个东西到底是哪个dirty的小饼干
-(gdb) x/w *0xf6ac8
-0x0:    0x00000000 # 哎呀，看样子比较会得到0
+(gdb) x/w *0xf6ac8 # test for ROM memory.
+0x0:    0x00000000 
 
 [f000:e062]    0xfe062: jne    0xfd2e1 # won't jump for zero.
 0x0000e062 in ?? ()
@@ -242,7 +242,16 @@ eflags         0x46                [ PF ZF ]
 [f000:d167]    0xfd167: out    %al,$0x70 # output %al to 0x70 IO Port.
 0x0000d167 in ?? ()
 [f000:d169]    0xfd169: in     $0x71,%al # input from port 71 to al
-0x0000d169 in ?? ()
+0x0000d169 in ?? () 
+# in fact, in & out functions are for CMOS
+# The CMOS memory exists outside of the normal address space and cannot
+# contain directly executable code. It is reachable through IN and OUT
+# commands at port number 70h (112d) and 71h (113d). To read a CMOS byte,
+# an OUT to port 70h is executed with the address of the byte to be read and
+# an IN from port 71h will then retrieve the requested information. The
+# following BASIC fragment will read 128 CMOS bytes and print them to the
+# screen in 8 rows of 16 values.
+#
 [f000:d16b]    0xfd16b: in     $0x92,%al # input from port 92 to al
 0x0000d16b in ?? ()
 (gdb) i r al
@@ -268,11 +277,80 @@ eax            0x60000010          1610612752
 eax            0x60000011          1610612753
 [f000:d187]    0xfd187: ljmpl  $0x8,$0xfd18f // jump
 0x0000d187 in ?? ()
-[f000:d187]    0xfd187: jmp    0x8:0xfd18f
-0x0000d187 in ?? ()
 (gdb) si
-The target architecture is set to "i386". // world change!!
+The target architecture is set to "i386". // world change!! Before this we are in real mode, but now we are in protected mode.
 => 0xfd18f:     mov    eax,0x10
 0x000fd18f in ?? ()
 ```
 
+阅读资料：
+
+{% embed url="http://web.archive.org/web/20040619131941/http://members.iweb.net.au/~pstorr/pcbook/book1/post.htm" %}
+Phil Storr's book for booting legacy 8086 machine.
+{% endembed %}
+
+{% embed url="https://bochs.sourceforge.io/techspec/CMOS-reference.txt" %}
+CMOS-Memory usage
+{% endembed %}
+
+```
+Background
+
+The CMOS (complementary metal oxide semiconductor) memory is actually
+a 64 or 128 byte battery-backed RAM memory module that is a part of the
+system clock chip. Some IBM PS/2 models have the capability for a
+2k (2048 byte) CMOS ROM Extension.
+
+First used with clock-calender cards for the IBM PC-XT, when the PC/AT
+(Advanced Technology) was introduced in 1985, the Motorola MC146818
+became a part of the motherboard. Since the clock only uses fourteen of
+the RAM bytes, the rest are available for storing system configuration data.
+
+Interestingly, the original IBM-PC/AT (Advanced Technology) standard for
+the region 10h-3Fh is nearly universal with one notable exception: The
+IBM PS/2 systems deviate considerably (Note: AMSTRAD 8086 machines were
+among the first to actively use the CMOS memory available and since they
+*predate* the AT, do not follow the AT standard).
+```
+
+可以看出对于CMOS的使用是8086的一个convention，也算是8086启动的时候的一个dirty knowledge. 我们简单总结一下在实模式下系统启动做了什么：检查内存和寄存器能否使用，打开CMOS内存接口，设置中断表a
+
+进入了386模式，即保护模式之后，我们来检查一下干了什么。现在可能希望做一次`console`上的输出，所以先把`0x10`这个值分布到`eax`上和其余段寄存器上。
+
+```nasm
+=> 0xfd18f:     mov    $0x10,%eax
+0x000fd18f in ?? ()
+(gdb) si
+=> 0xfd194:     mov    %eax,%ds
+0x000fd194 in ?? ()
+(gdb) si
+=> 0xfd196:     mov    %eax,%es
+0x000fd196 in ?? ()
+(gdb)
+=> 0xfd198:     mov    %eax,%ss // stack segment. 当然其他这里的寄存器都是data segment.
+0x000fd198 in ?? ()
+(gdb)
+=> 0xfd19a:     mov    %eax,%fs
+0x000fd19a in ?? ()
+(gdb)
+=> 0xfd19c:     mov    %eax,%gs
+0x000fd19c in ?? ()
+(gdb)
+=> 0xfd19e:     mov    %ecx,%eax
+0x000fd19e in ?? ()
+=> 0xfd1a0:     jmp    *%edx // 再次跳转
+0x000fd1a0 in ?? ()
+(gdb) i r edx
+edx            0xf34c2             996546
+// 之后就不再用gdb si命令逐步调试了，似乎再在汇编上逐步玩没有太大意思。建议一键按C去往下继续跟踪。
+```
+
+并没在后续中找到我想要的\`int\`指令以开启VGA输入功能，令本鼠鼠感叹。不得不说底层还是有很多dirty的知识，没有太大必要一定要掌握。直接继续看材料吧。
+
+**Part 2. The Boot Loader**
+
+在初始化了PCI总线和其余BIOS所知的主要设备后，为了启动，机器将会开始去寻找可以用于开机启动，即含有`boot-loader`的设备。如果找到，BIOS将会读取`boot loader`并对其展开控制。
+
+PC扇区大小为512字节，是磁盘传输的最小粒度。第一个扇区被称为启动扇区，内部有`boot loader`组件。第一个扇区会被装载到`0x7c00~0x7dff`这个范围。
+
+与现在利用CD-ROM来启动系统不同，6.828中依然使用较早的方式来启动，维持512 bytes启动扇区这一规则。
