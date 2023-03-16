@@ -4,7 +4,7 @@ description: bootstrap of xv6 lab1.
 
 # Project 3: xv6 lab1
 
-**Exercise1: Assembly familiarness.**
+### **Exercise1: Assembly familiarness.**
 
 The difference of AT\&T and Intel is quite big. 至少有一个东西我经常搞混球:
 
@@ -201,7 +201,7 @@ The target architecture is set to "i8086".
 
 上述即为一开始启动的代码，可以看到启动位置为0xffff0，在上述框图的`BIOS ROM`的位置附近。
 
-**Exercise 2. Use gdb** **to Trace Instructions.**
+### **Exercise 2. Use gdb** **to Trace Instructions.**
 
 我们使用`si`进行追踪。
 
@@ -354,3 +354,31 @@ edx            0xf34c2             996546
 PC扇区大小为512字节，是磁盘传输的最小粒度。第一个扇区被称为启动扇区，内部有`boot loader`组件。第一个扇区会被装载到`0x7c00~0x7dff`这个范围。
 
 与现在利用CD-ROM来启动系统不同，6.828中依然使用较早的方式来启动，维持512 bytes启动扇区这一规则。
+
+**各模式简介，**参考[https://pdos.csail.mit.edu/6.828/2018/readings/pcasm-book.pdf](https://pdos.csail.mit.edu/6.828/2018/readings/pcasm-book.pdf)
+
+**实模式：16-bit -> 20-bit memory address for physical.**
+
+**16-bit 保护模式：16-bit -> 20-bit memory address for virtual. (too small)**
+
+**32-bit 保护模式：添加了更大的地址空间，满足4GB，同时添加了分页的机制。**
+
+在源代码中已经有了很多的解读，做好理解感觉就足够了。
+
+#### JOS启动具体的流程：
+
+**boot.S**
+
+**实模式：关闭中断flag ->** 段寄存器清空 ->  **远古设备兼容I/O设置** **->** 中断表读入 -> 修改CR0寄存器 -> 跳转进入**保护模式**！
+
+**保护模式：设置好数据段寄存器 -> 进入main函数 (由ASM->C)**
+
+特别的：**CR0**寄存器的最后一位是保护位，如果为1，则会准备进入保护模式。
+
+```nasm
+[   0:7c2d] => 0x7c2d:  jmp    0x8:0x7c32                                │
+0x00007c2d in ?? ()
+```
+
+**main.c**
+
