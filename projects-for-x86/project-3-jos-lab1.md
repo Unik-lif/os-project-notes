@@ -2,7 +2,7 @@
 description: bootstrap of xv6 lab1.
 ---
 
-# Project 3: xv6 lab1
+# Project 3: JOS lab1
 
 ### **Exercise1: Assembly familiarness.**
 
@@ -382,3 +382,54 @@ PC扇区大小为512字节，是磁盘传输的最小粒度。第一个扇区被
 
 **main.c**
 
+```c
+// Some code
+// Read 'count' bytes at 'offset' from kernel into physical address 'pa'
+// Might copy more than asked, because sectors mechanism. -> copy should be a multiples
+// of sector size.
+void readseg(uint32_t pa, uint32_t count, uint32_t offset) {
+    // .... skip some codes here ....
+    // ~(SECTSIZE - 1) => 0x200 => starts address from the multiples of 0x200.
+    pa &= ~(SECTSIZE - 1);
+    // .... skip some codes here ....
+}
+
+void readsect(void *dst, uint32_t offset) {
+    waitdisk(); // wait for disk ready or not.
+    // .... skip some codes here ....
+    outb(0x1f7, 0x20); // cmd 0x20 - read sectors.
+    waitdist();
+    // read a sector.
+    insl(0x1f0, dst, SECTSIZE/4);
+}
+
+void bootmain(void) {
+    readseg((uint32_t) ELFHDR, SECTSIZE*8, 0);
+}
+```
+
+看不懂具体的端口号对我这种强迫症来说确实挺难受的，chatgpt似乎明白我的苦恼。
+
+在6.828实验1中，您需要了解的一些I/O ports包括：
+
+1. 串口端口(COM1): 用于与计算机串口通信。在x86架构中，COM1的端口号是0x3f8，COM2的端口号是0x2f8，COM3的端口号是0x3e8，COM4的端口号是0x2e8。
+2. 键盘端口(PS/2键盘): 用于与计算机键盘通信。在x86架构中，键盘控制器的端口号是0x60。
+3. 显示器端口(EGA/VGA显示器): 用于控制计算机显示器。在x86架构中，VGA显示器的控制器端口号为0x3d4和0x3d5，EGA显示器的控制器端口号为0x3c0和0x3c1。
+
+对于以上提到的端口号和功能，您可以参考一些资料来了解更详细的信息。以下是一些可能有用的资源：
+
+1. Bochs模拟器手册（英文版）：Bochs是一个开源的x86模拟器，它的手册中包含了一些有关x86体系结构和I/O端口的信息。
+2. 6.828课程的实验指导（英文版）：这是6.828课程的官方实验指导，其中包含了一些有关I/O端口的信息和代码示例。
+
+### Exercise 3: trace
+
+I've already traced once.
+
+* At what point does the processor start executing 32-bit code? What exactly causes the switch from 16-bit to 32-bit mode?
+  * `ljmp $PROT_MODE_CSEG, $protcseg`
+* What is the _last_ instruction of the boot loader executed, and what is the _first_ instruction of the kernel it just loaded?
+  * `movw $0x1234,0x472`
+* _Where_ is the first instruction of the kernel?
+  * `movw $0x1234,0x472`
+* How does the boot loader decide how many sectors it must read in order to fetch the entire kernel from disk? Where does it find this information?
+  * I guess these messages are gained from ELF.
