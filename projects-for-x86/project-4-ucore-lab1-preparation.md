@@ -2,7 +2,7 @@
 description: 记录uCore的笔记
 ---
 
-# Project 4: ucore lab1
+# Project 4: ucore lab1 preparation
 
 ## 前置知识：
 
@@ -185,7 +185,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 * Index：用于挑选表中8192个描述符
 * Table Indicator：用于选择GDT亦或是当前的LDT，GDT用1来选取
-* RPL：在保护模式中使用
+* RPL：在保护模式中使用，表示选择子当前的权限等级
 
 因为一般情况下第一个表项不会得到使用，因此选择子如果指向第一个表项，即INDEX=0，则可视作NULL，这一特性在初始化选择子这一需求上能得到应用。
 
@@ -198,4 +198,41 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 <figure><img src="../.gitbook/assets/Screenshot 2023-03-19 110938.png" alt=""><figcaption><p>段寄存器</p></figcaption></figure>
 
 可见部分是大家喜闻乐见的16-bit选择子，在实模式中他可以直接拿去构造20-bit大小，即1 MB的物理地址。而不可见部分则是需要通过处理器自身来获取的，它将会利用可见部分从描述符表中读取真正的Base address，存放到不可见部分，并利用不可见部分去构造真正的线性地址。
+
+**页地址转换：**
+
+页地址仅在CR0寄存器中的PG位被设置成1的时候才会发挥功效。一个页的大小一般为固定的4 KB，而在386机器中的每个页对应的是一块线性地址。如下所示：
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 180009.png" alt=""><figcaption><p>线性地址格式</p></figcaption></figure>
+
+386机器中采用了二级页表，利用DIR和PAGE部分，作为页表的INDEX，分别进行页的检索，从这里我们也可以侧面看出页表应该共有1 KB个项。
+
+完成前述索引可以找到我们想要的页，之后就可以利用OFFSET实现页内4 KB单元的检索，从而获取到相关的数据。12位恰好是4 KB，算一算正好可以覆盖全部的地址空间，所以这个设计是一个自洽的设计。
+
+对应的原理图如下所示：
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 180842.png" alt=""><figcaption><p>页地址转换过程</p></figcaption></figure>
+
+第一级的页表也被称为Page Directory，其基地址被存放在CR3寄存器中，该寄存器也被称为Page Directory Base Register (PDBR)。CR3的改变取决于进程的转换与调度。
+
+**页表项**
+
+页表项就是页表中存储的一个项。
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 182238.png" alt=""><figcaption><p>页表项的格式</p></figcaption></figure>
+
+* PAGE FRAME ADDRESS：页所在的物理地址，如果是第一级页表项的这一部分，则为第二级页表的基地址。
+* P位表示这个页表项是否被用于地址转换中，如果最后一位为0，则该表项的其余部分均可以给软件直接拿去使用。
+* D位，即脏位，CPU会在相关的页表项中写这个位表示已经被访问过。下次操作系统读写时会根据该位确定是否把脏数据写回。
+* R/W与U/S位，在保护模式下才能发挥功效，
+
+**机制与模式：**
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 191631.png" alt=""><figcaption><p>段页表内存机制</p></figcaption></figure>
+
+好像很简单...那就暂时不谈了捏。
+
+Summarized with a graph that can be easy to remember.
+
+<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 192641.png" alt=""><figcaption><p>地址转换图</p></figcaption></figure>
 
