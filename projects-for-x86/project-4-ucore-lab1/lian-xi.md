@@ -94,3 +94,40 @@ description: 简单的任务练习
 ```
 
 至于硬盘的主引导扇区的特征，我们已经在表格中提到了，即末尾的特殊字节。
+
+### 练习2：
+
+1. 从CPU加电后执行的第一条指令开始，单步跟踪BIOS的执行。
+2. 在初始化位置0x7c00设置实地址断点,测试断点正常。
+3. 从0x7c00开始跟踪代码运行，将单步跟踪反汇编得到的代码与bootasm.S和 bootblock.asm进行比较。
+4. 自己找一个bootloader或内核中的代码位置，设置断点并进行测试。
+
+根据做`JOS`的经验以及`RTFM`的体会，加电后第一个位置是`0xffff0`是一件很了然的事情，然而这里在调试时是有点`bug`，首先不知道为什么这边的`gdb`非常操蛋的没有出现相关的指令，需要手动在里头编写一个函数来帮忙：
+
+```sh
+define nI # for next Instruction.
+x/i $eip # print the next instruction.
+end
+```
+
+其次，似乎在这种模式下没有`ip`寄存器，其对应的其实是`eip`这个东东。虽然e是extension的意思，但其实架构上是有点小冲突（这应该是386的机器，但是应该能让我去直接找`ip`寄存器才对）。箭头指向的是`ip`的位置，打印的也是那部分的地址，但按照常理这显然是出了问题，如果要看下一条指令到底是什么，我们应该把它做一下修正。这下终于可以打印出正确的指令了。
+
+```sh
+(gdb) nI
+=> 0xfff0:	add    %al,(%eax) # 0xfff0 -> eip.
+
+# 探索了一下下
+(gdb) x/i $cs << 4 + $pc
+Argument to arithmetic operation not a number or boolean.
+(gdb) x/i $($cs << 4 + $pc)
+The history is empty.
+(gdb) x/i ($cs << 4 + $pc)
+Argument to arithmetic operation not a number or boolean.
+(gdb) x/i (($cs << 4) + $pc)
+   0xfe05b:	cmpw   $0xffc8,%cs:(%esi)
+   
+# gdbinit function
+define nI # for next Instruction.
+x/i (($cs << 4) + $eip) # print the next instruction.
+end
+```
