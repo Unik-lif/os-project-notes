@@ -2,7 +2,7 @@
 description: 记录uCore的笔记
 ---
 
-# Project 4: ucore lab1 preparation
+# Project 4: ucore lab1
 
 ## 前置知识：
 
@@ -60,7 +60,7 @@ description: 记录uCore的笔记
 
 **中断：**来自硬件设备的处理请求。-> 异步，因为**硬件不知道上层**的结构。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-18 101431.png" alt=""><figcaption><p>这个图画的很不错</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-18 101431.png" alt=""><figcaption><p>这个图画的很不错</p></figcaption></figure>
 
 **中断的处理流程：**
 
@@ -86,7 +86,7 @@ description: 记录uCore的笔记
 
 更进一步，CR0寄存器是控制寄存器中控制操作系统模式和处理器状态的寄存器，在Boot阶段发挥着模式切换的功效，因此它的内部结构需要做简单的研究和探讨。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-18 153735.png" alt=""><figcaption><p>CR0 register structure</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-18 153735.png" alt=""><figcaption><p>CR0 register structure</p></figcaption></figure>
 
 其中的一些位分别能实现页表机制，缓存机制等等功能，在BOOT阶段用到的其实只有CR0.PE这个位置。在PE位被设置为1的时候，系统将会启动保护模式。反之，系统将会启动实模式。
 
@@ -107,7 +107,7 @@ description: 记录uCore的笔记
   * TF：内陷标志，开启该功能后CPU能在每执行一条指令的同时产生异常，用以更方便去进行调试
   * VM：虚拟8086机模式，可以用于让机器运行在虚拟的8086模式之中
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-18 190805.png" alt=""><figcaption><p>EFLAGS Register</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-18 190805.png" alt=""><figcaption><p>EFLAGS Register</p></figcaption></figure>
 
 * 内存管理寄存器：该类别中存在四类寄存器
   * GDTR：全局描述符表寄存器，指向段描述符表格GDT
@@ -127,7 +127,7 @@ description: 记录uCore的笔记
     * CR2寄存器：在页表被设置时，用于处理页错误
     * CR3寄存器：在页表被设置时用于找到当前进程的Page Table Directory位置
 
-    <figure><img src="../.gitbook/assets/Screenshot 2023-03-18 193006.png" alt=""><figcaption><p>Control Registers</p></figcaption></figure>
+    <figure><img src="../../.gitbook/assets/Screenshot 2023-03-18 193006.png" alt=""><figcaption><p>Control Registers</p></figcaption></figure>
 
 
 * 调试寄存器：用于提供在不修改代码段的情况下实现指令级别的断点设置
@@ -137,7 +137,7 @@ description: 记录uCore的笔记
 
 80386相比于8086，添加了页寄存器的机制。更细致一些来说，在很多时候允许段页两个机制的共存。因此我们可以看到如下的转换图。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 090208.png" alt=""><figcaption><p>地址转换图</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 090208.png" alt=""><figcaption><p>地址转换图</p></figcaption></figure>
 
 逻辑地址进行段转换得到进一步的地址。如果没有在CR0中启动页机制，则直接作为物理地址。反之，将先获得线性地址，通过页转换后再得到物理地址。
 
@@ -145,13 +145,13 @@ description: 记录uCore的笔记
 
 **段地址转换的总体流程图如下所示：**
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 104720.png" alt=""><figcaption><p>段地址转换</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 104720.png" alt=""><figcaption><p>段地址转换</p></figcaption></figure>
 
 **可以看到：**首先机器使用了Selector来选择描述符表格内的选项，得到基地址后再与偏移量进行相加的操作，从而得到线性地址。
 
 段描述符会给处理器提供映射逻辑地址到线性地址所需的数据，这一过程对于程序员来说是透明的。段描述符的格式如下所示：
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 090827.png" alt=""><figcaption><p>段描述符</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 090827.png" alt=""><figcaption><p>段描述符</p></figcaption></figure>
 
 段描述符的格式：
 
@@ -169,11 +169,11 @@ description: 记录uCore的笔记
 
 GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄存器实现索引的功能。GDTR和LDTR寄存器存放了表格的基地址和段地址limit大小。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 103234.png" alt=""><figcaption><p>GDT表格和LDT表格</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 103234.png" alt=""><figcaption><p>GDT表格和LDT表格</p></figcaption></figure>
 
 这两个寄存器和其余相关的内存布局寄存器的格式在新Intel手册中有提及。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 104531.png" alt=""><figcaption><p>内存布局寄存器格式</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 104531.png" alt=""><figcaption><p>内存布局寄存器格式</p></figcaption></figure>
 
 现在我们并不关心出了Base Address与Table Limit以外的表项，故姑且不作更多解释。
 
@@ -181,7 +181,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 选择子用于确定描述符，其格式如下所示：
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 105833.png" alt=""><figcaption><p>选择子的格式</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 105833.png" alt=""><figcaption><p>选择子的格式</p></figcaption></figure>
 
 * Index：用于挑选表中8192个描述符
 * Table Indicator：用于选择GDT亦或是当前的LDT，GDT用1来选取
@@ -195,7 +195,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 在这里，每个段寄存器均有可见部分和不可见部分，格式如下所示：
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-19 110938.png" alt=""><figcaption><p>段寄存器</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-19 110938.png" alt=""><figcaption><p>段寄存器</p></figcaption></figure>
 
 可见部分是大家喜闻乐见的16-bit选择子，在实模式中他可以直接拿去构造20-bit大小，即1 MB的物理地址。而不可见部分则是需要通过处理器自身来获取的，它将会利用可见部分从描述符表中读取真正的Base address，存放到不可见部分，并利用不可见部分去构造真正的线性地址。
 
@@ -203,7 +203,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 页地址仅在CR0寄存器中的PG位被设置成1的时候才会发挥功效。一个页的大小一般为固定的4 KB，而在386机器中的每个页对应的是一块线性地址。如下所示：
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 180009.png" alt=""><figcaption><p>线性地址格式</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-21 180009.png" alt=""><figcaption><p>线性地址格式</p></figcaption></figure>
 
 386机器中采用了二级页表，利用DIR和PAGE部分，作为页表的INDEX，分别进行页的检索，从这里我们也可以侧面看出页表应该共有1 KB个项。
 
@@ -211,7 +211,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 对应的原理图如下所示：
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 180842.png" alt=""><figcaption><p>页地址转换过程</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-21 180842.png" alt=""><figcaption><p>页地址转换过程</p></figcaption></figure>
 
 第一级的页表也被称为Page Directory，其基地址被存放在CR3寄存器中，该寄存器也被称为Page Directory Base Register (PDBR)。CR3的改变取决于进程的转换与调度。
 
@@ -219,7 +219,7 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 页表项就是页表中存储的一个项。
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 182238.png" alt=""><figcaption><p>页表项的格式</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-21 182238.png" alt=""><figcaption><p>页表项的格式</p></figcaption></figure>
 
 * PAGE FRAME ADDRESS：页所在的物理地址，如果是第一级页表项的这一部分，则为第二级页表的基地址。
 * P位表示这个页表项是否被用于地址转换中，如果最后一位为0，则该表项的其余部分均可以给软件直接拿去使用。
@@ -228,13 +228,13 @@ GDT表格和当前的LDT表格均会存放在内存之中，利用GDTR和LDTR寄
 
 **机制与模式：**
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 191631.png" alt=""><figcaption><p>段页表内存机制</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-21 191631.png" alt=""><figcaption><p>段页表内存机制</p></figcaption></figure>
 
 好像很简单...那就暂时不谈了捏。
 
 Summarized with a graph that can be easy to remember.
 
-<figure><img src="../.gitbook/assets/Screenshot 2023-03-21 192641.png" alt=""><figcaption><p>地址转换图</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-21 192641.png" alt=""><figcaption><p>地址转换图</p></figcaption></figure>
 
 #### 第六章：
 

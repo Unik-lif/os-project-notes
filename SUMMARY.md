@@ -4,4 +4,5 @@
   * [Project 1: Unix utilization](projects-for-x86/project-1-unix-utilization.md)
   * [Project 2: reverse](projects-for-x86/project-2-reverse.md)
   * [Project 3: JOS lab1](projects-for-x86/project-3-xv6-lab1.md)
-  * [Project 4: ucore lab1 preparation](projects-for-x86/project-4-ucore-lab1-preparation.md)
+  * [Project 4: ucore lab1](projects-for-x86/project-4-ucore-lab1/README.md)
+    * [练习](projects-for-x86/project-4-ucore-lab1/lian-xi.md)
