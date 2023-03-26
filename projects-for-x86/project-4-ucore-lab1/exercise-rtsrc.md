@@ -2,7 +2,7 @@
 description: 简单的任务练习......喂，气死了，简单个毛！
 ---
 
-# Exercise
+# Exercise-RTSRC
 
 ### 练习1：
 
@@ -316,3 +316,134 @@ L: for 64-bit. skip here.
  20     # Switches processor into 32-bit mode.
  21     ljmp $PROT_MODE_CSEG, $protcseg
 ```
+
+### 练习4：
+
+* bootloader如何读取硬盘扇区的？
+* bootloader是如何加载ELF格式的OS？
+
+我们先给上一节的小尾巴做一个切断。
+
+```nasm
+  7 .code32                                             # Assemble for 32-bit mode
+  8 protcseg:
+  9     # Set up the protected-mode data segment registers
+ 10     movw $PROT_MODE_DSEG, %ax                       # Our data segment selector
+ 11     movw %ax, %ds                                   # -> DS: Data Segment
+ 12     movw %ax, %es                                   # -> ES: Extra Segment
+ 13     movw %ax, %fs                                   # -> FS
+ 14     movw %ax, %gs                                   # -> GS
+ 15     movw %ax, %ss                                   # -> SS: Stack Segment
+ 16
+ 17     # Set up the stack pointer and call into C. The stack region is from 0--start(0x7c00)
+ 18     movl $0x0, %ebp
+ 19     movl $start, %esp
+ 20     call bootmain
+
+# PROT_MODE_DSEG: we have mentioned before. Set it for data segments.
+# Stack: set the stack, with ebp->0x0, esp->0x7c00
+# After the intialization of stack, call function bootmain.
+```
+
+现在我们进入函数`bootmain`，该文件位于`bootmain.c`中。
+
+```c
+  3 /* bootmain - the entry of bootloader */
+  2 void
+  1 bootmain(void) {
+88      // read the 1st page off disk
+  1     readseg((uintptr_t)ELFHDR, SECTSIZE * 8, 0);
+  2
+  3     // is this a valid ELF?
+  4     if (ELFHDR->e_magic != ELF_MAGIC) {
+  5         goto bad;
+  6     }
+  7
+```
+
+该函数调用了`readseg`函数，同时检查`ELFHDR`头是否是合法的，具体是检查魔数。
+
+先看到`readseg`函数，以及内部的`readsect`函数。我们在注释中做了更详细的解析工作。
+
+```c
+ 1 /* *
+64   * readseg - read @count bytes at @offset from kernel into virtual address @va,
+  1  * might copy more than asked.
+  2  * */
+  3 static void
+  4 readseg(uintptr_t va, uint32_t count, uint32_t offset) {
+  5     uintptr_t end_va = va + count;
+  6
+  7     // round down to sector boundary
+  8     va -= offset % SECTSIZE; // when reading, va will start at the beginning of sector.
+  9
+ 10     // translate from bytes to sectors; kernel starts at sector 1
+ 11     uint32_t secno = (offset / SECTSIZE) + 1; // sector number.
+ 12
+ 13     // If this is too slow, we could read lots of sectors at a time.
+ 14     // We'd write more to memory than asked, but it doesn't matter --
+ 15     // we load in increasing order.
+ 16     for (; va < end_va; va += SECTSIZE, secno ++) {
+ 17         readsect((void *)va, secno); // using readsect to read by sector.
+ 18     }
+ 19 }
+ 
+ 
+  10 /* waitdisk - wait for disk ready */
+ 11 static void // for 0xC0 and 0x40, I don't know the details. It is also dirty knowledge.
+ 12 waitdisk(void) {
+ 13     while ((inb(0x1F7) & 0xC0) != 0x40) // 0x1f7 is the state and order register.
+ 14         /* inb is an inline-assembly function form of `inb port, data`*/;
+ 15 }
+ 
+  17 /* readsect - read a single sector at @secno into @dst */
+ 18 static void
+ 19 readsect(void *dst, uint32_t secno) {
+ 20     // wait for disk to be ready
+ 21     waitdisk();
+ 22     // outb: load byte into ports. Secno is the abstract address in LEA.
+ 23     outb(0x1F2, 1);                         // count = 1. One sector every time.
+ 24     outb(0x1F3, secno & 0xFF);              // LEA: low 8
+ 25     outb(0x1F4, (secno >> 8) & 0xFF);       // LEA: mid 8
+ 26     outb(0x1F5, (secno >> 16) & 0xFF);      // LEA: high 8
+ 27     outb(0x1F6, ((secno >> 24) & 0xF) | 0xE0); // LEA: 1110 [lba high 4].
+ 28     outb(0x1F7, 0x20);                      // cmd 0x20 - read sectors
+ 29
+ 30     // wait for disk to be ready
+ 31     waitdisk();
+ 32
+ 33     // read a sector
+ 34     insl(0x1F0, dst, SECTSIZE / 4);
+ 35 }
+```
+
+特别的，我们要注意按照先前`makefile`的解析，第二个扇区是`kernel`，第一个扇区是`bootloader`，因此，在计算`secno`之时，`sector number`会有一个加一。
+
+`readseg`函数把从第二个扇区开始的内核`ELF`文件加载到地址`0x10000`处，并做相关的解析工作。查看源码如下：
+
+```c
+96      struct proghdr *ph, *eph;
+  1
+  2     // load each program segment (ignores ph flags)
+  3     ph = (struct proghdr *)((uintptr_t)ELFHDR + ELFHDR->e_phoff);
+  4     eph = ph + ELFHDR->e_phnum;
+  5     for (; ph < eph; ph ++) {
+  6         readseg(ph->p_va & 0xFFFFFF, ph->p_memsz, ph->p_offset);
+  7     }
+  8
+  9     // call the entry point from the ELF header
+ 10     // note: does not return
+ 11     ((void (*)(void))(ELFHDR->e_entry & 0xFFFFFF))();
+```
+
+对于`ELF`的格式，其实是很大的一个篇幅，不过我们这边简单看一下`WIKI`是怎么介绍的。
+
+<figure><img src="https://upload.wikimedia.org/wikipedia/commons/e/e4/ELF_Executable_and_Linkable_Format_diagram_by_Ange_Albertini.png" alt=""><figcaption><p>ELF结构</p></figcaption></figure>
+
+可以看到作为头结构的其实是两个文件，因此于`lib/elf.h`中的内容对应上了。在`wiki`上提到，为了能够把相关的代码段完整的装载进来，需要找到代码头表格的每一项的地址，并把他们拉进来。
+
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-26 150851.png" alt=""><figcaption><p>ELF info</p></figcaption></figure>
+
+因此，我们看到了前述代码的`for loop + readseg`将代码读进来，最后还进入ELF的起始运行地址`entry`，从而运行内核源码这一整个流程。
+
+然而，针对这里的`0xffffff`我并没有太多的想法，如果你对这个东东有更多的理解，请联系我的邮箱：songlinke18@mails.ucas.ac.cn
