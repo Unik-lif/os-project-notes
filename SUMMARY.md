@@ -6,3 +6,4 @@
   * [Project 3: JOS lab1](projects-for-x86/project-3-xv6-lab1.md)
   * [Project 4: ucore lab1](projects-for-x86/project-4-ucore-lab1/README.md)
     * [Exercise-RTSRC](projects-for-x86/project-4-ucore-lab1/exercise-rtsrc.md)
+    * [Exercise-Coding](projects-for-x86/project-4-ucore-lab1/exercise-coding.md)
