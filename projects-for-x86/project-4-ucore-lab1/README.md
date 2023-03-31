@@ -322,7 +322,7 @@ $$
 
 对于中断描述符，其所主要有三种类型，分别是进程、中断门、陷门。其格式如下所示：
 
-<figure><img src="../../.gitbook/assets/Screenshot 2023-03-28 103843.png" alt=""><figcaption><p>中断描述符</p></figcaption></figure>
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-28 103843 (1).png" alt=""><figcaption><p>中断描述符</p></figcaption></figure>
 
 感觉可能用到的知识就这么多吧，剩下的看uCore的讲义即可。
 

@@ -205,3 +205,169 @@ Symnum n_type n_othr n_desc n_value  n_strx String
 2. 请编程完善kern/trap/trap.c中对中断向量表进行初始化的函数idt\_init。在idt\_init函数中，依次对所有中断入口进行初始化。使用mmu.h中的SETGATE宏，填充idt数组内容。每个中断的入口由tools/vectors.c生成，使用trap.c中声明的vectors数组即可。
 3. 请编程完善trap.c中的中断处理函数trap，在对时钟中断进行处理的部分填写trap函数中处理时钟中断的部分，使操作系统每遇到100次时钟中断后，调用print\_ticks子程序，向屏幕上打印一行文字”100 ticks”。
 
+中断描述符表的一个表项占据8个字节，如下所示：
+
+<figure><img src="../../.gitbook/assets/Screenshot 2023-03-28 103843.png" alt=""><figcaption><p>中断描述符表</p></figcaption></figure>
+
+其中`Selector`可以帮助在`LDT`或者`GDT`表中找到对应的基地址，而`Offset`可以作为偏移量。二者进行相加后，就能得到最终的中断处理代码的入口。
+
+后面的两个练习，第一个要比第二个麻烦的多。第二个我开摆了，就按照他说的这样做吧，暂时不细究细节了。
+
+首先，我们会发现`idt_init`这个函数会在`init.c`函数中出现，`init.c`则是在链接中第一个装上的目标文件，这和一开始利用`linker.ld`链接的顺序是一致的。
+
+```c
+ 15 int
+ 16 kern_init(void) {
+ 17     extern char edata[], end[];
+ 18     memset(edata, 0, end - edata);
+ 19
+ 20     cons_init();                // init the console
+ 21
+ 22     const char *message = "(THU.CST) os is loading ...";
+ 23     cprintf("%s\n\n", message);
+ 24
+ 25     print_kerninfo();
+ 26
+ 27     grade_backtrace();
+ 28
+ 29     pmm_init();                 // init physical memory management
+ 30
+ 31     pic_init();                 // init interrupt controller
+ 32     idt_init();                 // init interrupt descriptor table
+ 33
+ 34     clock_init();               // init clock interrupt
+ 35     intr_enable();              // enable irq interrupt
+ 36
+ 37     //LAB1: CAHLLENGE 1 If you try to do it, uncomment lab1_switch_test()
+ 38     // user/kernel mode switch test
+ 39     //lab1_switch_test();
+ 40
+ 41     /* do nothing */
+ 42     while (1);
+ 43 }
+```
+
+于是`idt_init`函数的目的就昭然若揭：需要利用`vectors`对中断表做一个简单的初始化，我们看向这个`vectors`的结构，在`vectors.S`之中。
+
+```nasm
+   2 # vector table
+   1 .data
+1280 .globl __vectors
+   1 __vectors:
+   2   .long vector0
+   3   .long vector1
+   4   .long vector2
+   5   .long vector3
+```
+
+可以看到所有中断向量存放在`__vectors`这一数组之中，他们存放的位置是在数据段上，并且可以简单地通过4字节偏移地址去访问这些向量。那么，这些向量到底存放了什么东西？查看该汇编文件的代码段信息，我们不难发现这样一个事实：
+
+```nasm
+   1 # handler
+2    .text
+   1 .globl __alltraps
+   2 .globl vector0
+   3 vector0:
+   4   pushl $0
+   5   pushl $0
+   6   jmp __alltraps
+   7 .globl vector1
+   8 vector1:
+   9   pushl $0
+  10   pushl $1
+  11   jmp __alltraps
+  12 .globl vector2
+  13 vector2:
+  14   pushl $0
+  15   pushl $2
+  16   jmp __alltraps
+```
+
+在简单地进行压栈等特质化操作后，控制流将会跳转到`__alltraps`处。`__alltraps`最早被定义在文件`kern/trap/trapentry.S`之中，以此开始针对各自情况进行异常处理，你会看到压栈和`CALL`的操作。
+
+不过这里并不是我们的重点，暂时忽略。
+
+为了实现初始化，题目建议采用宏的方式进行逐项处理（具体请看原题的注释）：
+
+```nasm
+  12 /* *
+ 13  * Set up a normal interrupt/trap gate descriptor
+ 14  *   - istrap: 1 for a trap (= exception) gate, 0 for an interrupt gate
+ 15  *   - sel: Code segment selector for interrupt/trap handler
+ 16  *   - off: Offset in code segment for interrupt/trap handler
+ 17  *   - dpl: Descriptor Privilege Level - the privilege level required
+ 18  *          for software to invoke this interrupt/trap gate explicitly
+ 19  *          using an int instruction.
+ 20  * */
+ 
+ 27 #define SETGATE(gate, istrap, sel, off, dpl) {            \
+ 26     (gate).gd_off_15_0 = (uint32_t)(off) & 0xffff;        \
+ 25     (gate).gd_ss = (sel);                                \
+ 24     (gate).gd_args = 0;                                    \
+ 23     (gate).gd_rsv1 = 0;                                    \
+ 22     (gate).gd_type = (istrap) ? STS_TG32 : STS_IG32;    \
+ 21     (gate).gd_s = 0;                                    \
+ 20     (gate).gd_dpl = (dpl);                                \
+ 19     (gate).gd_p = 1;                                    \
+ 18     (gate).gd_off_31_16 = (uint32_t)(off) >> 16;        \
+ 17 }
+```
+
+本质上这是对`IDT`表格中的项进行处理的一个流程，根据我们在前置资料中的笔记，理解他们是不难的。特别的，`istrap`在我们题目的情况下是可以置零，不过还有一个问题，我们需要找到选择子以及偏移量，但现在我们拥有的条件只有`vector`本身的地址信息，这是不足够的，因为它其实只不过就是个偏移量罢了。
+
+于是我们需要寻找任何和选择子有关的东东，找了一下发现这玩意在`memlayout.h`里头。我们看到下面这些规定：
+
+```nasm
+  9 #ifndef __KERN_MM_MEMLAYOUT_H__
+  8 #define __KERN_MM_MEMLAYOUT_H__
+  7
+  6 /* This file contains the definitions for memory management in our OS. */
+  5
+  4 /* global segment number */
+  3 #define SEG_KTEXT    1
+  2 #define SEG_KDATA    2
+  1 #define SEG_UTEXT    3
+10  #define SEG_UDATA    4
+  1 #define SEG_TSS        5
+  2
+  3 /* global descriptor numbers */
+  4 #define GD_KTEXT    ((SEG_KTEXT) << 3)        // kernel text
+  5 #define GD_KDATA    ((SEG_KDATA) << 3)        // kernel data
+  6 #define GD_UTEXT    ((SEG_UTEXT) << 3)        // user text
+  7 #define GD_UDATA    ((SEG_UDATA) << 3)        // user data
+  8 #define GD_TSS        ((SEG_TSS) << 3)        // task segment selector
+```
+
+考虑到现在电脑才刚启动，分权机制也没有添加，所以答案就很简单了。我们的选择子应该是`SEG_KTEXT`，用以跳转到`vector`所指向的中断处理代码。
+
+解答：
+
+```c
+ /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
+  4 void
+  5 idt_init(void) {
+  6      /* LAB1 YOUR CODE : STEP 2 */
+  7      /* (1) Where are the entry addrs of each Interrupt Service Routine (ISR)?
+  8       *     All ISR's entry addrs are stored in __vectors. where is uintptr_t __vectors[] ?
+  9       *     __vectors[] is in kern/trap/vector.S which is produced by tools/vector.c
+ 10       *     (try "make" command in lab1, then you will find vector.S in kern/trap DIR)
+ 11       *     You can use  "extern uintptr_t __vectors[];" to define this extern variable which will be used later.
+ 12       * (2) Now you should setup the entries of ISR in Interrupt Description Table (IDT).
+ 13       *     Can you see idt[256] in this file? Yes, it's IDT! you can use SETGATE macro to setup each item of IDT
+ 14       * (3) After setup the contents of IDT, you will let CPU know where is the IDT by using 'lidt' instruction.
+ 15       *     You don't know the meaning of this instruction? just google it! and check the libs/x86.h to know more.
+ 16       *     Notice: the argument of lidt is idt_pd. try to find it!
+ 17       */
+ 18
+ 19     // call extern global variabels __vectors.
+ 20     extern uintptr_t __vectors[];
+ 21
+ 22     // use __vectors to initialize the idt entry.
+ 23     for (int i = 0; i < 256; i++) {
+ 24         SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], 0);
+ 25     }
+ 26
+ 27     // lidt instruction to set the IDT with IDTR.
+ 28     lidt(&idt_pd);
+ 29 }
+```
