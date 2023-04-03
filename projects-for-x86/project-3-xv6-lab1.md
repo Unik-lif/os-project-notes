@@ -425,6 +425,14 @@ void bootmain(void) {
 
 I've already traced once.
 
+After the loading the kernel, we have these codes below: this tell us where we'll jump to.
+
+```c
+ 18     // call the entry point from the ELF header
+ 17     // note: does not return!
+ 16     ((void (*)(void)) (ELFHDR->e_entry))();
+```
+
 * At what point does the processor start executing 32-bit code? What exactly causes the switch from 16-bit to 32-bit mode?
   * `ljmp $PROT_MODE_CSEG, $protcseg`
 * What is the _last_ instruction of the boot loader executed, and what is the _first_ instruction of the kernel it just loaded?
@@ -432,4 +440,35 @@ I've already traced once.
 * _Where_ is the first instruction of the kernel?
   * `movw $0x1234,0x472`
 * How does the boot loader decide how many sectors it must read in order to fetch the entire kernel from disk? Where does it find this information?
-  * I guess these messages are gained from ELF.
+  * from ELF. We have these codes below:
+
+```c
+  2     // load each program segment (ignores ph flags)
+  1     ph = (struct Proghdr *) ((uint8_t *) ELFHDR + ELFHDR->e_phoff);
+52      eph = ph + ELFHDR->e_phnum;
+  1     for (; ph < eph; ph++)
+  2         // p_pa is the load address of this segment (as well
+  3         // as the physical address)
+  4         readseg(ph->p_pa, ph->p_memsz, ph->p_offset);
+```
+
+To understand this, read the following link:
+
+{% embed url="https://wiki.osdev.org/ELF" %}
+ELF Format & Usage.
+{% endembed %}
+
+### Exercise 4: C pointer
+
+Skip this part.
+
+### Exercise 5:&#x20;
+
+```sh
+[ 0:7c2d] => 0x7c2d: ljmp $0xb866,$0x88c32 // change text entry to 0x8c00.
+[ 0:7c2d] => 0x7c2d: ljmp $0xb866,$0x87c3 // text entry 0x7c00.
+```
+
+**A very strange phenonmenon:** even when we change the entry of the `.text` to `0x7c00`, the initialization seems to act rightly.
+
+`BIOS`会把指令装载到`0x7c00`这个位置，这其实是一个历史包袱，所以本质上并不会影响前述指令的执行，但链接器异常的影响依然存在，所以我们看到后续的指令执行出现了错误。
