@@ -7,3 +7,4 @@
   * [Project 4: ucore lab1](projects-for-x86/project-4-ucore-lab1/README.md)
     * [Exercise-RTSRC](projects-for-x86/project-4-ucore-lab1/exercise-rtsrc.md)
     * [Exercise-Coding](projects-for-x86/project-4-ucore-lab1/exercise-coding.md)
+  * [Project 5: ucore lab2](projects-for-x86/project-5-ucore-lab2.md)
