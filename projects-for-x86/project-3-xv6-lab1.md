@@ -1,8 +1,10 @@
 ---
-description: bootstrap of xv6 lab1.
+description: bootstrap of JOS lab1.
 ---
 
 # Project 3: JOS lab1
+
+#### 声明：不再重复与uCore相同的知识栈部分。
 
 ### **Exercise1: Assembly familiarness.**
 
@@ -452,17 +454,17 @@ After the loading the kernel, we have these codes below: this tell us where we'l
   4         readseg(ph->p_pa, ph->p_memsz, ph->p_offset);
 ```
 
-To understand this, read the following link:
+To understand this, read the following link: **ESPECIALLY FOR LOADING PART.**
 
 {% embed url="https://wiki.osdev.org/ELF" %}
 ELF Format & Usage.
 {% endembed %}
 
-### Exercise 4: C pointer
+### Exercise 4: C pointer.
 
 Skip this part.
 
-### Exercise 5:&#x20;
+### Exercise 5: Change link address to a wrong one.
 
 ```sh
 [ 0:7c2d] => 0x7c2d: ljmp $0xb866,$0x88c32 // change text entry to 0x8c00.
@@ -472,3 +474,90 @@ Skip this part.
 **A very strange phenonmenon:** even when we change the entry of the `.text` to `0x7c00`, the initialization seems to act rightly.
 
 `BIOS`会把指令装载到`0x7c00`这个位置，这其实是一个历史包袱，所以本质上并不会影响前述指令的执行，但链接器异常的影响依然存在，所以我们看到后续的指令执行出现了错误。
+
+### Exercise 6: Examine the memory address 0x00100000
+
+首先，我们利用下面的命令来查看利用`bootloader`装载的内核信息。
+
+```sh
+linkvm@link:/mnt/d/jos$ objdump -f obj/kern/kernel
+
+obj/kern/kernel:     file format elf32-i386
+architecture: i386, flags 0x00000112:
+EXEC_P, HAS_SYMS, D_PAGED
+start address 0x0010000c
+```
+
+可以看到ELF的起始地址是`0x001000c`，尝试用`GDB`跟踪一下。
+
+首先，我们需要在`0x001000c`这个位置打一个断点，然后才能保证kernel确实已经加载完成了。
+
+```sh
+(gdb) x/10x 0x00100000
+0x100000:       0x1badb002      0x00000000      0xe4524ffe      0x7205c766
+(gdb) x/10x 0x0010000c
+0x10000c:       0x7205c766      0x34000004      0x1000b812      0x220f0011
+```
+
+说实话，并没有太清楚这样做的意义何在。但0xc这样的偏移的存在似乎能够给人一个提示，即，即便利用`linker`设置了源码的进入入口，也不完全就会把这些代码设置在这个位置。
+
+此外，在`kernel.asm`中我们可以看到，内核实际上被放在了一个比较高的位置上，在正式编译成内核时，似乎会添加`3`个字长的奇怪的代码信息，它们也不会被拿去执行（因为直接通过`entry`跳到了`0x10000c`处了，猜测是`x86`的一些历史遗留问题）：
+
+```nasm
+   3 .globl entry                                                          
+   4 entry:                                                                
+   5     movw    $0x1234,0x472           # warm boot                       
+   6 f0100000:   02 b0 ad 1b 00 00       add    0x1bad(%eax),%dh           
+   7 f0100006:   00 00                   add    %al,(%eax)                 
+   8 f0100008:   fe 4f 52                decb   0x52(%edi)                 
+   9 f010000b:   e4                      .byte 0xe4
+```
+
+### Exercise 7: use QEMU and GDB to trace into the JOS kernel
+
+操作系统似乎很喜欢被链接到很高的位置上运行，这样的行为出于很多原因，其一便是给用户低地址空间自由使用的权利。注意，当我们说链接时，往往指的是虚拟内存。如果是装载，这个名词显然是指在物理内存中进行的。因此，在`JOS`的模型中，系统被装载在从`1MB`开始的空间中，但通过虚拟内存我们提供了一个假象，即`Linker`是把这个东东装载到虚拟内存的`0xf010000`处再运行内核的。
+
+根据JOS文档，干这件事的是`kern/entrypgdir.c`，不过幸运的是现在我们并不需要对此程序做完全的解读，只需知道在我们开启`CR0`最后一位，并且进入保护模式之时，这个转换就已经发生了。
+
+跟踪一下发现，确实如此，调整CR0后，于此同时这个东东就开始装载虚拟内存了。
+
+```sh
+=> 0x100025:    mov    %eax,%cr0
+
+Breakpoint 1, 0x00100025 in ?? ()
+(gdb) x/10x 0x00100000
+0x100000:       0x1badb002      0x00000000      0xe4524ffe      0x7205c766
+0x100010:       0x34000004      0x1000b812      0x220f0011      0xc0200fd8
+0x100020:       0x0100010d      0xc0220f80
+(gdb) x/10x 0xf0100000
+0xf0100000 <_start-268435468>:  Cannot access memory at address 0xf0100000
+(gdb) si
+=> 0x100028:    mov    $0xf010002f,%eax
+0x00100028 in ?? ()
+(gdb) x/10x 0xf0100000
+0xf0100000 <_start-268435468>:  0x1badb002      0x00000000      0xe4524ffe      0x7205c766
+0xf0100010 <entry+4>:   0x34000004      0x1000b812      0x220f0011      0xc0200fd8
+0xf0100020 <entry+20>:  0x0100010d      0xc0220f80
+```
+
+把这一行，即`mov %eax, %cr0`注释掉，重新跟踪一遍，发现下面的结果：
+
+```sh
+=> 0x10002a:    jmp    *%eax
+0x0010002a in ?? ()
+(gdb) x/10x 0xf010002c
+0xf010002c <relocated>: Cannot access memory at address 0xf010002c
+(gdb) si
+=> 0xf010002c <relocated>:      Error while running hook_stop:
+Cannot access memory at address 0xf010002c
+relocated () at kern/entry.S:74
+74              movl    $0x0,%ebp                       # nuke frame pointer
+(gdb)
+```
+
+在CR0没有开启保护模式下出现了这样的结局，因为并没有把原本位于物理地址`0x00100000`附近的指令给装载过来，那如果想要跳转过来运行的话，不出问题才怪呢。
+
+### Exercise 8: Format Printing.
+
+* Explain the interface between printf.c and console.c. Specifically, what function does console.c export? How is this function used by printf.c?
+
