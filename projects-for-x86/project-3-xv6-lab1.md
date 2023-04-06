@@ -559,5 +559,64 @@ relocated () at kern/entry.S:74
 
 ### Exercise 8: Format Printing.
 
-* Explain the interface between printf.c and console.c. Specifically, what function does console.c export? How is this function used by printf.c?
+* Explain the interface between `printf.c` and `console.c`. Specifically, what function does `console.c` export? How is this function used by `printf.c`?
 
+`console.c`文件为`printf.c`文件提供了`cputchar`, `vprintfmt`这样的函数。
+
+根据源码分析，在完善终端输出字符串这一过程中，需要完成序列化初始化，这一部分我在代码里做了简要的注释，然而参考资料过少确实也让解读起来摸不着头脑，为什么要按照这样的顺序做更是完全不知道，不过老旧的设备也有令人觉得有趣的地方，比如读写共享寄存器作为`buffer`之类的玩意儿。
+
+`Parallel port`部分的链接全都挂了，不过在OSDEV上能够找到简要的介绍，其流程与console.c中所示的很接近。
+
+{% embed url="https://wiki.osdev.org/Parallel_port#Centronics_Handshaking" %}
+Parallel port part
+{% endembed %}
+
+对于`CGA port`部分的解读请参考这一部分资料，大致可以猜猜看他在干什么：
+
+{% embed url="https://pdos.csail.mit.edu/6.828/2018/readings/hardware/vgadoc/CGA.TXT" %}
+CGA text
+{% endembed %}
+
+对于`cga_init`初始化函数，首先似乎有一层判断，判断是否是常规的`CGA`模式还是`MONO`模式，之后再对照手册校准`cursor`位置，不过只能说大意如此，全都是坑。
+
+在console.c中我们可以注意到`cga_putc`与`cons_putc`的交叉递归，只需要考虑几个特殊`case`就能想清楚这个递归的调用顺序了。这里涉及部分与换行相关的特殊字符的处理，值得学习。
+
+* Explain the following from `console.c`:
+
+```c
+1      if (crt_pos >= CRT_SIZE) {
+2              int i;
+3              memmove(crt_buf, crt_buf + CRT_COLS, (CRT_SIZE - CRT_COLS) * sizeof(uint16_t));
+4              for (i = CRT_SIZE - CRT_COLS; i < CRT_SIZE; i++)
+5                      crt_buf[i] = 0x0700 | ' ';
+6              crt_pos -= CRT_COLS;
+7      }
+```
+
+解读到这里答案便是呼之欲出了，如果`crt_pos`大于等于页面大小`CRT_SIZE`，则需要准备往下继续添加了，同时把最上面一行去掉，因为这个页面已经装不下了。我们查看`memmove`函数，发现恰如其分地完成了这个需求：
+
+```c
+  8 void *
+  7 memmove(void *dst, const void *src, size_t n)
+  6 {
+  5     const char *s;
+  4     char *d;
+  3
+  2     s = src;
+  1     d = dst;
+195     if (s < d && s + n > d) {
+  1         s += n;
+  2         d += n;
+  3         while (n-- > 0)
+  4             *--d = *--s;
+  5     } else // our case.
+  6         while (n-- > 0)
+  7             *d++ = *s++; // copy from the first pixel. remove the first line of pixels of last plane.
+  8
+  9     return dst;
+ 10 }
+```
+
+最后一行这时候应该显示为空，所以我们用了一个`for`循环进行赋值。有一说一这也过于简陋了。`crt_pos`这时候也该后退一下。第二题结束。
+
+我们到这里也确实完成`kern/printf.c`中的`putch`函数的口胡解读。
