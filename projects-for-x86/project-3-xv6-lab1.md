@@ -4,7 +4,7 @@ description: bootstrap of JOS lab1.
 
 # Project 3: JOS lab1
 
-#### 声明：不再重复与uCore相同的知识栈部分。
+#### 声明：努力不再重复与uCore相同的知识栈部分。
 
 ### **Exercise1: Assembly familiarness.**
 
@@ -559,6 +559,10 @@ relocated () at kern/entry.S:74
 
 ### Exercise 8: Format Printing.
 
+We have omitted a small fragment of code - the code necessary to print octal numbers using patterns of the form "%o". Find and fill in this code fragment.
+
+这个练习甚至不用读代码，抄一下其它case就完事了，如果要加颜色看一下ANSI就好了，总之很简单。
+
 * Explain the interface between `printf.c` and `console.c`. Specifically, what function does `console.c` export? How is this function used by `printf.c`?
 
 `console.c`文件为`printf.c`文件提供了`cputchar`, `vprintfmt`这样的函数。
@@ -620,3 +624,123 @@ CGA text
 最后一行这时候应该显示为空，所以我们用了一个`for`循环进行赋值。有一说一这也过于简陋了。`crt_pos`这时候也该后退一下。第二题结束。
 
 我们到这里也确实完成`kern/printf.c`中的`putch`函数的口胡解读。
+
+下面尝试解读函数`vcprintf`：其中调用了函数`vprintfmt`，我们追溯这个函数。
+
+```c
+ 5 int
+  4 vcprintf(const char *fmt, va_list ap)
+  3 {
+  2     int cnt = 0;
+  1
+21      vprintfmt((void*)putch, &cnt, fmt, ap);
+  1     return cnt;
+  2
+```
+
+函数太长，本人的注释写在愿文件中，建议看一下源文件。特别的，va\_list相关的操作可参考下面的资料：
+
+{% embed url="https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/va-arg-va-copy-va-end-va-start?view=msvc-170" %}
+va\_list info
+{% endembed %}
+
+{% embed url="https://en.cppreference.com/w/c/variadic/va_arg" %}
+usage
+{% endembed %}
+
+具体来说，`va_list`相关的宏被广泛使用在非定长的函数中。在实现`vprintfmt`时，请参考原本`printf`所示的资料。令人感叹，`printf`居然还有这么多功能。
+
+{% embed url="https://www.runoob.com/cprogramming/c-function-printf.html" %}
+printf function
+{% endembed %}
+
+有上面的基础后，我们看一下习题：
+
+* Trace the execution of the following code step-by-step:
+
+```c
+int x = 1, y = 3, z = 4;
+cprintf("x %d, y %x, z %d\n", x, y, z);
+```
+
+* In the call to `cprintf()`, to what does `fmt` point? To what does `ap` point?
+
+`fmt` points to `"x %d, y %x, z %d\n"`, `ap` points to the list of `[x, y, z]`.
+
+* List (in order of execution) each call to `cons_putc`, `va_arg`, and `vcprintf`. For `cons_putc`, list its argument as well. For `va_arg`, list what `ap` points to before and after the call. For `vcprintf` list the values of its two arguments.
+
+我们追踪启动时的代码，把上面的代码放在`i386_init`函数内部，即可利用`gdb`调用查看。调用结果如下展示：`cputchar`确实会一个一个地把字符输出并且拼接。把这个东东跟完似乎没有太大意义，我们就跟一个吧。
+
+```sh
+=> 0xf0100a51 <cprintf+6>:      lea    0xc(%ebp),%eax
+cprintf (fmt=0xf0101a77 "x %d, y %x, z %d\n") at kern/printf.c:
+31     va_start(ap, fmt);
+gdb) p fmt
+$1 = 0xf0101a77 "x %d, y %x, z %d\n"
+
+vcprintf (fmt=0xf0101a77 "x %d, y %x, z %d\n", ap=0xf010efd4 "\001")
+// let's check ap!
+(gdb) x/8x 0xf010efd4
+ 0xf010efd4:     0x00000001 (x)     0x00000003 (y)     0x00000004 (z)     0xf0112060
+ 0xf010efe4:     0x00000000      0x00000660      0x00000000      0x00000000 
+
+vprintfmt (putch=0xf01009f2 <putch>, putdat=0xf010ef9c, fmt=0xf0101a77 "x %d, y %x, z %d\n", ap=0xf010efd4 "\001")
+
+va_arg(*ap, int); // *ap = 1, which is x.
+
+printnum (putch=0xf01009f2 <putch>, putdat=0xf010ef9c, num=1, base=10, width=-1, padc=32)
+// successfully print 1 at end!!
+// SKIP!!
+```
+
+在跟踪这个过程中感觉这个代码写得真漂亮啊，可惜我写不来。
+
+第三题结束。
+
+* 第四题修改一下跑一下即可，
+
+```c
+    unsigned int i = 0x00646c72;
+    cprintf("H%x Wo%s", 57616, &i); // 57616 -> e110. 
+    // i: little end. treated as string: 72 6c 64 00 -> rld\0
+```
+
+倒是挺有黑客的意思。
+
+*   In the following code, what is going to be printed after `'y='`? (note: the answer is not a specific value.) Why does this happen?
+
+    ```
+        cprintf("x=%d y=%d", 3);
+    ```
+
+```sh
+vcprintf (fmt=0xf0101a77 "x=%d y=%d", ap=0xf010efe4 "\003") at kern/printf.│
+c:19                                                                       │
+19              int cnt = 0;                                               │
+(gdb) p ap                                                                 │
+$2 = (va_list) 0xf010efe4 "\003"                                           │
+(gdb) p *ap                                                                │
+$3 = 3 '\003'                                                              │
+(gdb) p *(ap + 1)                                                          │
+$4 = 0 '\000'                                                              │
+(gdb) x/2x ap                                                              │
+0xf010efe4:     0x00000003      0x00000660
+
+(gdb) p num                                                                │
+$6 = 1632                                                                  │
+(gdb) n                                                                    │
+=> 0xf0101263 <vprintfmt+1044>: add    $0x20,%esp                          │
+234                             break;                                     │
+(gdb)                                 
+```
+
+通过`gdb`观察，y的值完全取决于`ap list`后一项到底是什么东东。这玩意由于不受控制，完全是个随机的东东。`1632`其实就是`0x660`。
+
+* Let's say that GCC changed its calling convention so that it pushed arguments on the stack in declaration order, so that the last argument is pushed last. How would you have to change `cprintf` or its interface so that it would still be possible to pass it a variable number of arguments?
+
+这个问题其实是个不那么`trivial`的问题，首先，为什么`GCC`调用规范要要求从最后一个参数开始往栈内压数据呢？有很多网上的答案说因为变长参数函数不知道到底有多少参数，所以要用这个方式来做。但实际上这句话只说对了一半。在我们大部分情况下使用`printf`这样的函数时，编译器完全可以很轻松地把参数个数搞到。
+
+真正的应用场景其实是在我们调用动态库利用里面的函数的时候，在加载它们进入内存并与我们的文件建立链接、重定位并且运行之前，没有人知道这个函数长什么样，有几个参数。
+
+那么，应该怎么做才能打破这个调用规范呢？我想到了一个很笨笨的方法，手动拆分掉我们的`va_list`，转而调用很多很多个一次只能解析一个参数的函数。也就是说，原本我们是对一个函数分配不确定的栈，现在我们用很多函数分配确定的栈空间，至于函数有多少个，我们用一个`loop`就好了捏。
+
