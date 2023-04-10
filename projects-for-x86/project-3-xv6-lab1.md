@@ -744,3 +744,147 @@ $6 = 1632                                                                  │
 
 那么，应该怎么做才能打破这个调用规范呢？我想到了一个很笨笨的方法，手动拆分掉我们的`va_list`，转而调用很多很多个一次只能解析一个参数的函数。也就是说，原本我们是对一个函数分配不确定的栈，现在我们用很多函数分配确定的栈空间，至于函数有多少个，我们用一个`loop`就好了捏。
 
+### Exercise 9: About Stack.
+
+Determine where the kernel initializes its stack, and exactly where in memory its stack is located. How does the kernel reserve space for its stack? And at which "end" of this reserved area is the stack pointer initialized to point to?
+
+最早内核是在文件`kern/entry.S`中实现内核栈的建立。具体代码如下：
+
+```nasm
+  8 relocated:
+  7
+  6     # Clear the frame pointer register (EBP)
+  5     # so that once we get into debugging C code,
+  4     # stack backtraces will be terminated properly.
+  3     movl    $0x0,%ebp           # nuke frame pointer
+  2
+  1     # Set the stack pointer
+77      movl    $(bootstacktop),%esp
+  1
+  2     # now to C code
+  3     call    i386_init
+  4
+  5     # Should never get here, but in case we do, just spin.
+  6 spin:   jmp spin
+  7
+  8
+  9 .data
+ 10 ###################################################################
+ 11 # boot stack
+ 12 ###################################################################
+ 13     .p2align    PGSHIFT     # force page alignment
+ 14     .globl      bootstack
+ 15 bootstack:
+ 16     .space      KSTKSIZE    # Kernel Stack Size ensurance.
+ 17     .globl      bootstacktop
+ 18 bootstacktop:N
+```
+
+其中`KSTKSIZE`是内核栈的大小，我们可以看到这个栈的建立与存在，其栈底为0，栈顶为`bootstacktop`所指向的地址。
+
+### Exercise 10: backtrace stack.
+
+To become familiar with the C calling conventions on the x86, find the address of the `test_backtrace` function in obj/kern/kernel.asm, set a breakpoint there, and examine what happens each time it gets called after the kernel starts. How many 32-bit words does each recursive nesting level of `test_backtrace` push on the stack, and what are those words?
+
+这个问题需要调试来得知，不过感觉效果确实不错。
+
+我们利用断点打在函数`test_backtrace`之上，可以看到return address应该是`0xf01000f4`。与此同时，来看一下此时的函数`ebp`与`esp`信息和栈之间存储的信息。
+
+```nasm
+   3     test_backtrace(5);
+   2 f01000e8:   c7 04 24 05 00 00 00    movl   $0x5,(%esp)
+   1 f01000ef:   e8 4c ff ff ff          call   f0100040 <test_backtrace>
+169  f01000f4:   83 c4 10                add    $0x10,%esp
+
+
+
+   4     # now to C code
+   3     call    i386_init
+   2 f0100039:   e8 68 00 00 00          call   f01000a6 <i386_init>
+   1
+64   f010003e <spin>:
+   1
+   2     # Should never get here, but in case we do, just spin.
+   3 spin:   jmp spin
+   4 f010003e:   eb fe                   jmp    f010003e <spin>
+```
+
+```sh
+=> 0xf0100040 <test_backtrace>: push   %ebp
+Breakpoint 2, test_backtrace (x=5) at kern/init.c:13
+13      {
+(gdb) i r ebp
+ebp            0xf010eff8          0xf010eff8
+(gdb) i r esp                                                                                                                                       
+esp            0xf010efdc          0xf010efdc                                                                                                                                                                   
+(gdb) i r eip
+eip            0xf0100040          0xf0100040 <test_backtrace>
+(gdb) x/8x 0xf010efdc                                                                                   
+0xf010efdc:     0xf01000f4      0x00000005      0x00001aac      0x00000660                              
+0xf010efec:     0x00000000      0x00000000      0x00010094      0x00000000
+(gdb) x *0xf010effc                                                                                    
+0xf010003e:     0x8955feeb
+
+```
+
+在运行`test_backtrace`函数之前，栈信息尚为`i386_init`的函数栈信息，我们可以看到`5`被压入了函数栈中，但这并不重要。注意到`ebp + 4`其实是返回地址，打印以后发现确实如此。
+
+进入函数后，继续查看：我们做好记号，运用之妙令人感叹。
+
+```sh
+# test_backtrace(5).
+(gdb) i r ebp                                                                                           │
+ebp            0xf010efd8          0xf010efd8                                                           │
+(gdb) i r esp                                                                                           │
+esp            0xf010efd0          0xf010efd0
+(gdb) x/4x 0xf010efd0                                                                                   │
+0xf010efd0:     0xf0110308      0x00010094      0xf010eff8      0xf01000f4
+# | 0xf01000f4 | <- return address. -> last function stack frame.
+# | - - - - - -|
+# | 0xf010eff8 | <- ebp  - ---> store the last ebp here.
+# | 0x00010094 |           \
+# | 0xf0110308 | <- esp  - - -> this function stack frame.
+
+   4     // Test the stack backtrace function (lab 1 only)
+   3     test_backtrace(5);
+   2 f01000e8:   c7 04 24 05 00 00 00    movl   $0x5,(%esp)
+   1 f01000ef:   e8 4c ff ff ff          call   f0100040 <test_backtrace>
+169  f01000f4:   83 c4 10                add    $0x10,%esp # return address.
+# test_backtrace(4).
+# 刚进入时
+(gdb) i r ebp                                                                                           │
+ebp            0xf010efb8          0xf010efb8                                                           │
+(gdb) i r esp                                                                                           │
+esp            0xf010efb0          0xf010efb0                                                           │
+(gdb) x/4x 0xf010efb0                                                                                   │
+0xf010efb0:     0xf0110308      0x00000005      0xf010efd8      0xf0100076
+# very similar to test_backtrace(5)
+
+# Why not consistent? -> 'cprintf' is also included, the 'parameter' , i.e. 4 and 5, can be found in between
+# on the function stack frame.
+(gdb) x/16x 0xf010efb0                                                                                  │
+0xf010efb0:     0xf0110308      0x00000005      0xf010efd8      
+                                                4_ebp.
+                                                                0xf0100076                              │
+0xf010efc0:     0x00000004      0x00000005      0x00000000      0xf010004a                              │
+0xf010efd0:     0xf0110308      0x00010094      0xf010eff8      
+                                                5_ebp.
+                                                                0xf01000f4                              │
+0xf010efe0:     0x00000005      0x00001aac      0x00000660      0x00000000
+```
+
+所以可以看出来其实会有`8`个`32-bit`长度的字被存放进去了。从`asm`代码中可以看到此处是离开递归的入口。
+
+```nasm
+99   f0100076:   83 c4 10                add    $0x10,%esp
+   1     else
+   2         mon_backtrace(0, 0, 0);
+   3     cprintf("leaving test_backtrace %d\n", x);
+   4 f0100079:   83 ec 08                sub    $0x8,%esp
+```
+
+虽然跟踪很好玩，但也很累人，不是特别清楚一些函数参数如何压栈，因此仍需要直接了当的方式来处理。
+
+### Exercise 11: back trace stack frame
+
+Implement the backtrace function as specified above. Use the same format as in the example, since otherwise the grading script will be confused. When you think you have it working right, run make grade to see if its output conforms to what our grading script expects, and fix it if it doesn't. _After_ you have handed in your Lab 1 code, you are welcome to change the output format of the backtrace function any way you like.
