@@ -9,3 +9,4 @@
     * [Exercise-RTSRC](projects-for-x86/project-5-ucore-lab1/exercise-rtsrc.md)
     * [Exercise-Coding](projects-for-x86/project-5-ucore-lab1/exercise-coding.md)
   * [Project 6: ucore lab2](projects-for-x86/project-6-ucore-lab2.md)
+* [Projects-for-Risc-V](projects-for-risc-v.md)
