@@ -888,3 +888,38 @@ esp            0xf010efb0          0xf010efb0                                   
 ### Exercise 11: back trace stack frame
 
 Implement the backtrace function as specified above. Use the same format as in the example, since otherwise the grading script will be confused. When you think you have it working right, run make grade to see if its output conforms to what our grading script expects, and fix it if it doesn't. _After_ you have handed in your Lab 1 code, you are welcome to change the output format of the backtrace function any way you like.
+
+这个任务并不困难，直接写代码就好了。
+
+```c
+  3 int
+  2 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
+  1 {
+61      // Your code here.
+  1     // Declaration:
+  2     cprintf("Stack backtrace:\n");
+  3
+  4     uint32_t ebp, eip;
+  5     uint32_t* args;
+  6     struct Eipdebuginfo eipinfo;
+  7
+  8     ebp = read_ebp();
+  9     while (ebp != 0) {
+ 10         eip = *((uint32_t*) ebp + 1);
+ 11         args = (uint32_t*) ebp + 2;
+ 12         cprintf("  ebp %08x  eip %08x  args", ebp, eip);
+ 13         for (int i = 0; i < 5; i++) {
+ 14             cprintf(" %08x", args[i]);
+ 15         }
+ 16         cprintf("\n");
+ 17         debuginfo_eip(eip, &eipinfo);
+ 18         cprintf("         %s:%d: %.*s+%u\n", eipinfo.eip_file, eipinfo.eip_line, eipinfo.eip_fn_namelen, eipinfo.eip_fn_name, eip - eipinfo.eip_fn_addr);
+ 19         ebp = *((uint32_t*) ebp);
+ 20     }
+ 21     return 0;
+ 22 }
+```
+
+### Exercise 12: back trace stack frame
+
+该任务主要是帮助学生们理解`slabs`是什么。简单在`debuginfo_eip`函数中春初一下相关的信息就能完成我们的目的。
